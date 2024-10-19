@@ -5,9 +5,11 @@ where
     D: Deserializer<'de>,
 {
     let players: Vec<Player> = Deserialize::deserialize(deserializer)?;
-    Ok(players.into_iter().filter(|p| p.gameextrainfo.is_some() || p.gameid.is_some()).collect())
+    Ok(players
+        .into_iter()
+        .filter(|p| p.gameextrainfo.is_some() || p.gameid.is_some())
+        .collect())
 }
-
 
 #[derive(Deserialize)]
 pub struct Player {
