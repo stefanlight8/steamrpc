@@ -1,11 +1,11 @@
-#[path = "./structs.rs"]
 mod structs;
+mod utils;
 
 use std::{env, error::Error};
 
 use chrono::Utc;
 use discord_rich_presence::{
-    activity::{self, Activity, Timestamps},
+    activity::{Activity, Timestamps},
     DiscordIpc, DiscordIpcClient,
 };
 use dotenv::dotenv;
@@ -14,15 +14,12 @@ use tokio::time::{interval, Duration};
 use tokio_stream::{wrappers::IntervalStream, StreamExt};
 
 use structs::PlayerSummaries;
+use utils::get_default_activity;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     println!("Hello");
     dotenv().ok();
-
-    let default_activity = Activity::new()
-        .state("No current game")
-        .timestamps(Timestamps::new());
 
     let http_client = Client::new();
     let mut rpc_client =
@@ -32,7 +29,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         match rpc_client.connect() {
             Ok(_) => {
                 println!("Connected to Discord RPC");
-                rpc_client.set_activity(default_activity.clone())?;
+                rpc_client.set_activity(get_default_activity())?;
                 break;
             }
             Err(e) => eprintln!("Failed to connect to Discord RPC: {e}, retrying"),
@@ -40,6 +37,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let mut stream = IntervalStream::new(interval(Duration::from_secs(5)));
+    let mut timestamp: Option<i64> = None;
+
     while stream.next().await.is_some() {
         match http_client
             .get(format!(
@@ -55,14 +54,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 if let Some(player) = data.response.players.first() {
                     if let Some(game_name) = player.gameextrainfo.as_deref() {
                         println!("Updated activity, now you playing {game_name}");
+                        
+                        if timestamp.is_none() {
+                            timestamp = Some(Utc::now().timestamp())
+                        }
+
                         rpc_client.set_activity(
-                            activity::Activity::new()
-                                .timestamps(Timestamps::new().start(Utc::now().timestamp())) // TODO(fix): timestamp resets every 5 seconds
+                            Activity::new()
+                                .timestamps(Timestamps::new().start(timestamp.unwrap()))  // unsafe
                                 .state(game_name),
                         )?;
                     }
                 } else {
-                    rpc_client.set_activity(default_activity.clone())?;
+                    rpc_client.set_activity(get_default_activity())?;
+                    timestamp = None;
                 }
             }
             Err(e) => eprintln!("Failed to send request: {e}"),
